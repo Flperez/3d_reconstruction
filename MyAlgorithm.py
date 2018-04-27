@@ -8,7 +8,7 @@ import threading
 from pyProgeo.progeo import Progeo
 import cv2
 import os
-
+import time
 from matplotlib import pyplot as plt
 
 
@@ -120,16 +120,19 @@ class MyAlgorithm():
 
         return projected_lst,projected_lst_grafic
 
-    def drawPoint(self,image,lstPoints,color):
+    def drawPoint(self,image,lstPoints,color,idx):
         if len(image.shape)==2:
             out = cv2.cvtColor(image,cv2.COLOR_GRAY2RGB)
         else:
             out = image.copy()
 
         for uv in lstPoints:
-            out[uv[0],uv[1]]=color
-
-        cv2.circle(out,(lstPoints[-1,1],lstPoints[-1,0]),3,(0,255,255))
+            if uv:
+                out[uv[0],uv[1]]=color
+        if type(lstPoints) == list:
+            cv2.circle(out,(lstPoints[idx][1],lstPoints[idx][0]),3,(0,255,255))
+        else:
+            cv2.circle(out, (lstPoints[idx,1], lstPoints[idx,0]), 3, (0, 255, 255))
         return out
 
 
@@ -141,12 +144,13 @@ class MyAlgorithm():
         incu = int(size[0]/2)
         incv = int(size[1]/2)
 
-        matchingR = np.array([])
+        matchingR = [[] for n in range(keyPointsL.shape[0])]
 
         for idx,uvL in enumerate(keyPointsL):
             # print "uvL,idx", uvL,idx
             patchL = hsvL[uvL[0]-incu:uvL[0]+incu+1,uvL[1]-incv:uvL[1]+incv+1,:]
             maximum = 0
+            best = None
             # eliminamos repetidos
             lst2matchingR_unique=np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR[idx]))))
             for jdx,uvR in enumerate(lst2matchingR_unique):
@@ -159,8 +163,11 @@ class MyAlgorithm():
                     if corr > maximum:
                         maximum = corr
                         best = uvR
-            matchingR = np.append(matchingR,best).reshape(-1,3).astype(np.int)
+
+
+            matchingR[idx] = best.astype(np.int)
             outR = MyAlgorithm.drawPoint(self,edgesR,matchingR,(255,0,0))
+
             outL = MyAlgorithm.drawPoint(self,edgesL,keyPointsL[0:idx+1,:].astype(np.int),(0,255,0))
             self.setRightImageFiltered(outR)
             self.setLeftImageFiltered(outL)
