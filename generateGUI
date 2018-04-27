@@ -1,0 +1,7 @@
+#!/bin/bash
+	cd gui
+	pyuic5 3d_reconstructrionui.ui > form.py
+	cd ../resources 
+	pyrcc5 resources.qrc -o resources_rc.py
+	mv resources_rc.py ..
+	cd ..
