@@ -7,6 +7,7 @@ import numpy as np
 import threading
 from pyProgeo.progeo import Progeo
 import cv2
+import os
 
 from matplotlib import pyplot as plt
 
@@ -51,6 +52,21 @@ class MyAlgorithm():
                 file.write("%f %f %f %d %d %d\n"%(lst_points[idx,0],lst_points[idx,1],lst_points[idx,2],
                                                   lst_points[idx, 3],lst_points[idx,4],lst_points[idx,5]))
 
+    def correlation_coefficient(self,patch1, patch2):
+        if patch1.shape[1] < patch2.shape[1]:
+            patch2 = patch2[:,0:patch1.shape[1]]
+
+        if patch2.shape[1] < patch1.shape[1]:
+            patch1 = patch1[:, 0:patch2.shape[1]]
+
+        product = np.mean((patch1 - patch1.mean()) * (patch2 - patch2.mean()))
+        stds = patch1.std() * patch2.std()
+        if stds == 0:
+            return 0
+        else:
+            product /= stds
+            return product
+
     def findKeypoints(self,imageR,imageL):
         grayR = cv2.cvtColor(imageR,cv2.COLOR_RGB2GRAY)
 
@@ -64,7 +80,12 @@ class MyAlgorithm():
         edgesL = cv2.Canny(grayL, 100, 200)
         keypointsL =  np.asarray(np.where(edgesL == 255)).T
         keypointsL = np.concatenate((keypointsL, np.ones((keypointsL.shape[0], 1))), 1)
-        return keypointsR, keypointsL
+
+
+        self.setRightImageFiltered(cv2.cvtColor(edgesR,cv2.COLOR_GRAY2RGB))
+        self.setLeftImageFiltered(cv2.cvtColor(edgesL,cv2.COLOR_GRAY2RGB))
+
+        return keypointsR, keypointsL,edgesR,edgesL
 
 
 
@@ -89,6 +110,8 @@ class MyAlgorithm():
         projected_lst = [[] for N in range(len(lst3d))]
         projected_lst_grafic = [[] for N in range(len(lst3d))]
         for N in range(len(lst3d)):
+            if N%100==0:
+                print N,"/",len(lst3d)
             for idx,xyz in enumerate(lst3d[N]):
                 projected = self.camRightP.project(xyz)
                 projected_grafic = np.floor(self.camRightP.opticalToGrafic(projected)).astype(np.int)
@@ -97,8 +120,65 @@ class MyAlgorithm():
 
         return projected_lst,projected_lst_grafic
 
+    def drawPoint(self,image,lstPoints,color):
+        if len(image.shape)==2:
+            out = cv2.cvtColor(image,cv2.COLOR_GRAY2RGB)
+        else:
+            out = image.copy()
 
-    def matchingPoints(self,keyPointsR,lst2matchingL,imageR,ImageL):
+        for uv in lstPoints:
+            out[uv[0],uv[1]]=color
+
+        cv2.circle(out,(lstPoints[-1,1],lstPoints[-1,0]),3,(0,255,255))
+        return out
+
+
+    def matchingPoints(self,keyPointsL,lst2matchingR,imageR,imageL,edgesR,edgesL,size=(5,5),save=False):
+        hsvR = cv2.cvtColor(imageR,cv2.COLOR_RGB2HSV)
+        hsvL = cv2.cvtColor(imageL,cv2.COLOR_RGB2HSV)
+        alfa = 0.5
+        beta = 0.5
+        incu = int(size[0]/2)
+        incv = int(size[1]/2)
+
+        matchingR = np.array([])
+
+        for idx,uvL in enumerate(keyPointsL):
+            # print "uvL,idx", uvL,idx
+            patchL = hsvL[uvL[0]-incu:uvL[0]+incu+1,uvL[1]-incv:uvL[1]+incv+1,:]
+            maximum = 0
+            # eliminamos repetidos
+            lst2matchingR_unique=np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR[idx]))))
+            for jdx,uvR in enumerate(lst2matchingR_unique):
+                # print "uvR,jdx",uvR,jdx
+                # Solo buscamos el matching si es un pixel de contorno
+                if edgesR[uvR[0],uvR[1]]==255:
+                    patchR = hsvR[uvR[0] - incu:uvR[0] + incu+1, uvR[1] - incv:uvR[1] + incv+1, :]
+                    corr = alfa*MyAlgorithm.correlation_coefficient(self,patchL[:,:,0],patchR[:,:,0])\
+                           +beta*MyAlgorithm.correlation_coefficient(self,patchR[:,:,1],patchR[:,:,1])
+                    if corr > maximum:
+                        maximum = corr
+                        best = uvR
+            matchingR = np.append(matchingR,best).reshape(-1,3).astype(np.int)
+            outR = MyAlgorithm.drawPoint(self,edgesR,matchingR,(255,0,0))
+            outL = MyAlgorithm.drawPoint(self,edgesL,keyPointsL[0:idx+1,:].astype(np.int),(0,255,0))
+            self.setRightImageFiltered(outR)
+            self.setLeftImageFiltered(outL)
+
+        if save:
+            np.save("matchingR.npy",matchingR)
+
+        return matchingR
+
+    def get3dColor(self,pointsL,pointsR,imageL):
+        vectorR = MyAlgorithm.getVectors(self, pointsR, self.camRightP.getCameraPosition())
+
+        return None
+
+
+
+
+
 
 
 
@@ -111,20 +191,40 @@ class MyAlgorithm():
         imageLeft = self.sensor.getImageLeft()
         imageRight = self.sensor.getImageRight()
 
-        # KEYPOINTS
-        keypointsR, keypointsL = MyAlgorithm.findKeypoints(self,imageR=imageRight,imageL=imageLeft)
+        os.system("killall gzserver")
+        save= True
 
+
+        # KEYPOINTS
+        print "Calculating canny"
+        keypointsR, keypointsL,edgesR,edgesL = MyAlgorithm.findKeypoints(self,imageR=imageRight,imageL=imageLeft)
+        print "Keypoints Right: {:d}\t Keypoints Left: {:d}".format(keypointsR.shape[0],keypointsL.shape[0])
+        print "Done!"
+
+        print "Calculating all vectors"
         # Lines
         vectorL = MyAlgorithm.getVectors(self,keypointsL,self.camLeftP.getCameraPosition())
-        vectorR = MyAlgorithm.getVectors(self,keypointsR,self.camRightP.getCameraPosition())
+
+        # vectorR = MyAlgorithm.getVectors(self,keypointsR,self.camRightP.getCameraPosition())
 
         # Get M points from N vectors: NxM
+        print "Calculating list of 3D points "
         lstPoints3d_L = MyAlgorithm.getPointsfromline(self,vectorL,self.camLeftP.getCameraPosition(),M=100)
+        print "Dimension",len(lstPoints3d_L),"x",len(lstPoints3d_L[0])
 
         # Get NxM projected points from NxM
+        print "Projecting points"
         projected_R,projected_R_Grafic = MyAlgorithm.getlstProjectedPoints(self,lstPoints3d_L)
 
-        # Get points to grafic
+        # Matching point
+        print "Matching"
+        matchingR = MyAlgorithm.matchingPoints(self,keypointsL,projected_R_Grafic,imageRight,
+                                               imageLeft,edgesR,edgesL,save=save)
+        print "Done!"
+        lst3dcolor = MyAlgorithm.get3dColor(self,keypointsL,matchingR,imageLeft)
+
+
+
 
 
 
