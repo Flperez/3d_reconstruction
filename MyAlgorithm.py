@@ -9,9 +9,12 @@ from pyProgeo.progeo import Progeo
 import cv2
 import os
 import time
-import sys
+import sys,math
 from matplotlib import pyplot as plt
+from numpy import linalg as LA
 
+import matplotlib as mpl
+from mpl_toolkits.mplot3d import Axes3D
 
 class MyAlgorithm():
 
@@ -131,6 +134,7 @@ class MyAlgorithm():
         cv2.circle(out, (lstPoints[idx, 1], lstPoints[idx, 0]), 3,color, 2)
         return out
 
+
     def matchingPoints(self,keyPointsL,lst2matchingR,imageR,imageL,edgesR,edgesL,size=(11,11),save=False):
         hsvR = cv2.cvtColor(imageR,cv2.COLOR_RGB2HSV)
         hsvL = cv2.cvtColor(imageL,cv2.COLOR_RGB2HSV)
@@ -176,9 +180,13 @@ class MyAlgorithm():
             # Draw matching
             outR = MyAlgorithm.drawPoint(self,outR,matchingR.astype(np.int),idx,(255,0,0))
             outL = MyAlgorithm.drawPoint(self,outL,keyPointsL.astype(np.int),idx,(0,255,0))
-
-            self.setRightImageFiltered(MyAlgorithm.drawLastPoint(self,outR,matchingR.astype(np.int),idx))
-            self.setLeftImageFiltered(MyAlgorithm.drawLastPoint(self,outL,keyPointsL.astype(np.int),idx))
+            outR_last = MyAlgorithm.drawLastPoint(self, outR, matchingR.astype(np.int), idx)
+            outL_last = MyAlgorithm.drawLastPoint(self, outL, keyPointsL.astype(np.int), idx)
+            self.setRightImageFiltered(outR_last)
+            self.setLeftImageFiltered(outL_last)
+            # cv2.imshow("Derecha",outR_last)
+            # cv2.imshow("Izquierda",outL_last)
+            # cv2.waitKey(10)
 
 
         #Borramos aquellos puntos donde no se ha hecho correctamente el matching
@@ -210,26 +218,86 @@ class MyAlgorithm():
         PL = OL + vL * ts[0]
         PR = OR + vR * ts[1]
         return PL,PR
+    #
+    # def line_intersection(self, line1, line2):
+    #     A
+    #     return x, y
+
+
+    def intersection(self,vectorR,vectorL,OR,OL):
+
+        inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 4.0, 0.01)])
+
+
+        lineR = OR+vectorR*inc
+        lineL = OL+vectorL*inc
+
+        minimun = LA.norm(OR-OL)
+        for idx in range(lineR.shape[0]):
+            distance = LA.norm(lineR[idx,:]-lineL[idx,:])
+            if distance <= minimun:
+                minimun = distance
+
+            else:
+                break
+
+
+        return lineR[idx,:]
+
+
+
+    def plot3dvector(self,vectorR,vectorL,OR,OL,intersec):
+
+        N=100
+        inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 2.0, 0.1)])
+
+        Pinter0 = np.concatenate((intersec, np.array([0,0,0]))).reshape(-1, 3)
+        OLR =  np.concatenate((OL, OR)).reshape(-1, 3)
+        lineR = OR+vectorR*inc
+        lineL = OL+vectorL*inc
+        fig = plt.figure()
+
+        ax = fig.gca(projection='3d')
+
+        ax.plot(lineR[:,0],lineR[:,1],lineR[:,2],'b')
+        ax.plot(lineL[:,0],lineL[:,1],lineL[:,2],'r')
+        ax.plot(Pinter0[:,0], Pinter0[:,1], Pinter0[:,2], 'k')
+        ax.plot(OLR[:,0], OLR[:,1], OLR[:,2], 'g')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        plt.show()
+        return
 
 
     def get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft):
         vectorR = MyAlgorithm.getVectors(self, matchingR, self.camRightP.getCameraPosition())
         vectorL =  np.delete(vectorL,ind_not_match,0)
-        disparity = matchingR[:,1]-keyPointsL[:,1]
+        # disparity = matchingR[:,1]-keyPointsL[:,1]
         OL = self.camLeftP.getCameraPosition()
         OR = self.camRightP.getCameraPosition()
+
+
         lstPL = []
         lstPR = []
         lstPLR_color = []
         for idx,vL in enumerate(vectorL):
-            vR = vectorR[idx,:3]
-            vL = vL[:3]
-            PL,PR = MyAlgorithm.getpointsMinimunDistance(self,vL,vR,OL,OR)
-            lstPL.append(PL)
-            lstPR.append(PR)
-            average = np.mean((PL,PR),0).tolist()
+            if idx%100==0:
+                print idx,'/',vectorL.shape[0]
+
+
+            # vR = vectorR[idx,:3]
+            # vL = vL[:3]
+            intersec = MyAlgorithm.intersection(self,vectorR[idx, :3], vectorL[idx, :3], OR, OL)
+            # PL,PR = MyAlgorithm.getpointsMinimunDistance(self,vL,vR,OL,OR)
+            MyAlgorithm.plot3dvector(self, vectorR[idx, :3], vectorL[idx, :3], OR, OL,intersec)
+            # lstPL.append(intersec)
+            # lstPR.append(PR)
+            # average = np.mean((PL,PR),0).tolist()
             color = MyAlgorithm.getColor(self,imageLeft,keyPointsL[idx,:])
-            lstPLR_color.append(average+color)
+            lstPLR_color.append(intersec.tolist()+color)
+
+
 
         return lstPLR_color
 
@@ -253,7 +321,7 @@ class MyAlgorithm():
         imageRight = self.sensor.getImageRight()
 
         os.system("killall gzserver")
-        save= True
+        save= False
 
 
         # KEYPOINTS
@@ -290,7 +358,7 @@ class MyAlgorithm():
         write = True
         if write:
             print "Writing data"
-            MyAlgorithm.writeTxt(self,"ptsColor.txt",lst3dcolor)
+            MyAlgorithm.writeTxt(self,"ptsColor_intersec.txt",lst3dcolor)
             print "Done!"
             sys.exit()
 
