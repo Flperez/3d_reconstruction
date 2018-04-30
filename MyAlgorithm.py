@@ -9,6 +9,7 @@ from pyProgeo.progeo import Progeo
 import cv2
 import os
 import time
+import sys
 from matplotlib import pyplot as plt
 
 
@@ -48,9 +49,9 @@ class MyAlgorithm():
 
     def writeTxt(self,path,lst_points):
         with open(path,'w') as file:
-            for idx in range(lst_points.shape[0]):
-                file.write("%f %f %f %d %d %d\n"%(lst_points[idx,0],lst_points[idx,1],lst_points[idx,2],
-                                                  lst_points[idx, 3],lst_points[idx,4],lst_points[idx,5]))
+            for xyzRGB in lst_points:
+                file.write("%f;%f;%f;%d;%d;%d\n"%(xyzRGB[0],xyzRGB[1],xyzRGB[2],
+                                                  xyzRGB[3],xyzRGB[4],xyzRGB[5]))
 
     def correlation_coefficient(self,patch1, patch2):
         if patch1.shape[1] < patch2.shape[1]:
@@ -96,7 +97,7 @@ class MyAlgorithm():
         return np.concatenate((point3ds[:,:3]-posCam*np.ones(pointInOpts.shape), np.ones((pointInOpts.shape[0], 1))), 1)
 
 
-    def getPointsfromline(self,vectors,Origin,M=120):
+    def getPointsfromline(self,vectors,Origin,M=150):
         lst = [[] for N in range(vectors.shape[0])]
         alfas = np.linspace(1,M,M)
         for idx,Vxyz in enumerate(vectors):
@@ -120,37 +121,37 @@ class MyAlgorithm():
 
         return projected_lst,projected_lst_grafic
 
-    def drawPoint(self,image,lstPoints,color,idx):
-        if len(image.shape)==2:
-            out = cv2.cvtColor(image,cv2.COLOR_GRAY2RGB)
-        else:
-            out = image.copy()
-
-        for uv in lstPoints:
-            if uv:
-                out[uv[0],uv[1]]=color
-        if type(lstPoints) == list:
-            cv2.circle(out,(lstPoints[idx][1],lstPoints[idx][0]),3,(0,255,255))
-        else:
-            cv2.circle(out, (lstPoints[idx,1], lstPoints[idx,0]), 3, (0, 255, 255))
+    def drawPoint(self,image,lstPoints,idx,color):
+        out = image.copy()
+        out[lstPoints[idx,0],lstPoints[idx,1]]=color
         return out
 
+    def drawLastPoint(self,image,lstPoints,idx,color=(0,255,255)):
+        out = image.copy()
+        cv2.circle(out, (lstPoints[idx, 1], lstPoints[idx, 0]), 3,color, 2)
+        return out
 
     def matchingPoints(self,keyPointsL,lst2matchingR,imageR,imageL,edgesR,edgesL,size=(5,5),save=False):
         hsvR = cv2.cvtColor(imageR,cv2.COLOR_RGB2HSV)
         hsvL = cv2.cvtColor(imageL,cv2.COLOR_RGB2HSV)
-        alfa = 0.5
-        beta = 0.5
+        alfa = 0.75
+        beta = 0.25
         incu = int(size[0]/2)
         incv = int(size[1]/2)
+        ind_not_match = []
 
-        matchingR = [[] for n in range(keyPointsL.shape[0])]
+        matchingR = np.zeros(keyPointsL.shape)
+
+        outR = cv2.cvtColor(edgesR,cv2.COLOR_GRAY2RGB)
+        outL = cv2.cvtColor(edgesL,cv2.COLOR_GRAY2RGB)
 
         for idx,uvL in enumerate(keyPointsL):
+            if idx%100==0:
+                print idx,'/',keyPointsL.shape[0]
             # print "uvL,idx", uvL,idx
             patchL = hsvL[uvL[0]-incu:uvL[0]+incu+1,uvL[1]-incv:uvL[1]+incv+1,:]
             maximum = 0
-            best = None
+            best = np.zeros([3,])
             # eliminamos repetidos
             lst2matchingR_unique=np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR[idx]))))
             for jdx,uvR in enumerate(lst2matchingR_unique):
@@ -164,25 +165,76 @@ class MyAlgorithm():
                         maximum = corr
                         best = uvR
 
+            if tuple(best) == tuple(np.zeros((3,))):
+                print "Point not match: ",uvL,idx
+                ind_not_match.append(idx)
+                # delete point
 
-            matchingR[idx] = best.astype(np.int)
-            outR = MyAlgorithm.drawPoint(self,edgesR,matchingR,(255,0,0))
 
-            outL = MyAlgorithm.drawPoint(self,edgesL,keyPointsL[0:idx+1,:].astype(np.int),(0,255,0))
-            self.setRightImageFiltered(outR)
-            self.setLeftImageFiltered(outL)
+            matchingR[idx,:] = best.astype(np.int)
 
+            # Draw matching
+            outR = MyAlgorithm.drawPoint(self,outR,matchingR.astype(np.int),idx,(255,0,0))
+            outL = MyAlgorithm.drawPoint(self,outL,keyPointsL.astype(np.int),idx,(0,255,0))
+
+            self.setRightImageFiltered(MyAlgorithm.drawLastPoint(self,outR,matchingR.astype(np.int),idx))
+            self.setLeftImageFiltered(MyAlgorithm.drawLastPoint(self,outL,keyPointsL.astype(np.int),idx))
+
+
+        #Borramos aquellos puntos donde no se ha hecho correctamente el matching
+        matchingR = np.delete(matchingR, ind_not_match, 0)
+        keyPointsL = np.delete(keyPointsL,ind_not_match,0)
         if save:
             np.save("matchingR.npy",matchingR)
 
-        return matchingR
-
-    def get3dColor(self,pointsL,pointsR,imageL):
-        vectorR = MyAlgorithm.getVectors(self, pointsR, self.camRightP.getCameraPosition())
-
-        return None
+        return keyPointsL,matchingR,ind_not_match
 
 
+    def getpointsMinimunDistance(self,vL,vR,OL,OR):
+
+        OLR = OR - OL
+        a11 = np.dot(+vR, vL)
+        a12 = np.dot(-vL, vL)
+        a21 = np.dot(vR, vR)
+        a22 = np.dot(-vL, vR)
+
+
+        b1 = np.dot(OLR, vL)
+        b2 = np.dot(OLR, vR)
+
+        a = np.array([[a11, a12], [a21, a22]])
+        b = np.array([b1, b2])
+
+        ts = np.linalg.solve(a, b)
+
+        PL = OL + vL * ts[0]
+        PR = OR + vR * ts[1]
+        return PL,PR
+
+
+    def get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft):
+        vectorR = MyAlgorithm.getVectors(self, matchingR, self.camRightP.getCameraPosition())
+        vectorL =  np.delete(vectorL,ind_not_match,0)
+        OL = self.camLeftP.getCameraPosition()
+        OR = self.camRightP.getCameraPosition()
+        lstPL = []
+        lstPR = []
+        lstPLR_color = []
+        for idx,vL in enumerate(vectorL):
+            vR = vectorR[idx,:3]
+            vL = vL[:3]
+            PL,PR = MyAlgorithm.getpointsMinimunDistance(self,vL,vR,OL,OR)
+            lstPL.append(PL)
+            lstPR.append(PR)
+            average = np.mean((PL,PR),0).tolist()
+            color = MyAlgorithm.getColor(self,imageLeft,keyPointsL[idx,:])
+            lstPLR_color.append(average+color)
+
+        return lstPLR_color
+
+
+    def getColor(self,image,point):
+        return image[point[0],point[1],:].tolist()
 
 
 
@@ -208,7 +260,7 @@ class MyAlgorithm():
         print "Keypoints Right: {:d}\t Keypoints Left: {:d}".format(keypointsR.shape[0],keypointsL.shape[0])
         print "Done!"
 
-        print "Calculating all vectors"
+        print "Calculating all vectors from left camera"
         # Lines
         vectorL = MyAlgorithm.getVectors(self,keypointsL,self.camLeftP.getCameraPosition())
 
@@ -216,7 +268,7 @@ class MyAlgorithm():
 
         # Get M points from N vectors: NxM
         print "Calculating list of 3D points "
-        lstPoints3d_L = MyAlgorithm.getPointsfromline(self,vectorL,self.camLeftP.getCameraPosition(),M=100)
+        lstPoints3d_L = MyAlgorithm.getPointsfromline(self,vectorL,self.camLeftP.getCameraPosition(),M=150)
         print "Dimension",len(lstPoints3d_L),"x",len(lstPoints3d_L[0])
 
         # Get NxM projected points from NxM
@@ -225,16 +277,20 @@ class MyAlgorithm():
 
         # Matching point
         print "Matching"
-        matchingR = MyAlgorithm.matchingPoints(self,keypointsL,projected_R_Grafic,imageRight,
-                                               imageLeft,edgesR,edgesL,save=save)
+        keyPointsL, matchingR, ind_not_match = MyAlgorithm.matchingPoints(self,keypointsL,
+                                                                        projected_R_Grafic,imageRight,
+                                                                        imageLeft,edgesR,edgesL,save=save)
         print "Done!"
-        lst3dcolor = MyAlgorithm.get3dColor(self,keypointsL,matchingR,imageLeft)
 
+        print "Triangulating points"
+        lst3dcolor = MyAlgorithm.get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft)
 
-
-
-
-
+        write = True
+        if write:
+            print "Writing data"
+            MyAlgorithm.writeTxt(self,"ptsColor.txt",lst3dcolor)
+            print "Done!"
+            sys.exit()
 
         if self.done:
             return

@@ -19,7 +19,7 @@
 #
 
 
-import sys
+import sys,os
 from PyQt5.QtWidgets import QApplication
 from gui.GUI import MainWindow
 from gui.threadGUI import ThreadGUI
