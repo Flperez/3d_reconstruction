@@ -131,7 +131,7 @@ class MyAlgorithm():
         cv2.circle(out, (lstPoints[idx, 1], lstPoints[idx, 0]), 3,color, 2)
         return out
 
-    def matchingPoints(self,keyPointsL,lst2matchingR,imageR,imageL,edgesR,edgesL,size=(5,5),save=False):
+    def matchingPoints(self,keyPointsL,lst2matchingR,imageR,imageL,edgesR,edgesL,size=(11,11),save=False):
         hsvR = cv2.cvtColor(imageR,cv2.COLOR_RGB2HSV)
         hsvL = cv2.cvtColor(imageL,cv2.COLOR_RGB2HSV)
         alfa = 0.75
@@ -145,7 +145,7 @@ class MyAlgorithm():
         outR = cv2.cvtColor(edgesR,cv2.COLOR_GRAY2RGB)
         outL = cv2.cvtColor(edgesL,cv2.COLOR_GRAY2RGB)
 
-        for idx,uvL in enumerate(keyPointsL):
+        for idx,uvL in enumerate(keyPointsL.astype(np.int)):
             if idx%100==0:
                 print idx,'/',keyPointsL.shape[0]
             # print "uvL,idx", uvL,idx
@@ -215,6 +215,7 @@ class MyAlgorithm():
     def get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft):
         vectorR = MyAlgorithm.getVectors(self, matchingR, self.camRightP.getCameraPosition())
         vectorL =  np.delete(vectorL,ind_not_match,0)
+        disparity = matchingR[:,1]-keyPointsL[:,1]
         OL = self.camLeftP.getCameraPosition()
         OR = self.camRightP.getCameraPosition()
         lstPL = []
@@ -234,6 +235,7 @@ class MyAlgorithm():
 
 
     def getColor(self,image,point):
+        point = point.astype(np.int)
         return image[point[0],point[1],:].tolist()
 
 
