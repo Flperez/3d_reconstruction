@@ -93,10 +93,15 @@ class MyAlgorithm():
 
 
 
-    def getVectors(self,pointsUV1,posCam):
-        pointInOpts = np.asarray([self.camLeftP.graficToOptical(np.array([pointIn[1],pointIn[0],1]))
-                                  for pointIn in pointsUV1])
-        point3ds = np.asarray([self.camLeftP.backproject(pointInOpt) for pointInOpt in pointInOpts])
+    def getVectors(self,pointsUV1,posCam,cam="right"):
+        if cam=="right":
+            pointInOpts = np.asarray([self.camLeftP.graficToOptical(np.array([pointIn[1],pointIn[0],1]))
+                                      for pointIn in pointsUV1])
+            point3ds = np.asarray([self.camLeftP.backproject(pointInOpt) for pointInOpt in pointInOpts])
+        else:
+            pointInOpts = np.asarray([self.camRightP.graficToOptical(np.array([pointIn[1], pointIn[0], 1]))
+                                      for pointIn in pointsUV1])
+            point3ds = np.asarray([self.camRightP.backproject(pointInOpt) for pointInOpt in pointInOpts])
         return np.concatenate((point3ds[:,:3]-posCam*np.ones(pointInOpts.shape), np.ones((pointInOpts.shape[0], 1))), 1)
 
 
@@ -154,7 +159,7 @@ class MyAlgorithm():
                 print idx,'/',keyPointsL.shape[0]
             # print "uvL,idx", uvL,idx
             patchL = hsvL[uvL[0]-incu:uvL[0]+incu+1,uvL[1]-incv:uvL[1]+incv+1,:]
-            maximum = 0
+            maximum = 0.5
             best = np.zeros([3,])
             # eliminamos repetidos
             lst2matchingR_unique=np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR[idx]))))
@@ -184,9 +189,7 @@ class MyAlgorithm():
             outL_last = MyAlgorithm.drawLastPoint(self, outL, keyPointsL.astype(np.int), idx)
             self.setRightImageFiltered(outR_last)
             self.setLeftImageFiltered(outL_last)
-            # cv2.imshow("Derecha",outR_last)
-            # cv2.imshow("Izquierda",outL_last)
-            # cv2.waitKey(10)
+
 
 
         #Borramos aquellos puntos donde no se ha hecho correctamente el matching
@@ -218,23 +221,31 @@ class MyAlgorithm():
         PL = OL + vL * ts[0]
         PR = OR + vR * ts[1]
         return PL,PR
-    #
-    # def line_intersection(self, line1, line2):
-    #     A
-    #     return x, y
 
 
     def intersection(self,vectorR,vectorL,OR,OL):
 
-        inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 4.0, 0.01)])
-
-
-        lineR = OR+vectorR*inc
-        lineL = OL+vectorL*inc
+        # Grueso
+        inc_grueso = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 50.0, 0.01)])
+        lineR_grueso = OR+vectorR*inc_grueso
+        lineL_grueso = OL+vectorL*inc_grueso
 
         minimun = LA.norm(OR-OL)
-        for idx in range(lineR.shape[0]):
-            distance = LA.norm(lineR[idx,:]-lineL[idx,:])
+        for idx in range(lineR_grueso.shape[0]):
+            distance = LA.norm(lineR_grueso[idx,:]-lineL_grueso[idx,:])
+            if distance <= minimun:
+                minimun = distance
+
+            else:
+                break
+
+        inc_fino = np.asarray([np.repeat(value, 3, 0) for value in np.arange(inc_grueso[idx-1,0], inc_grueso[idx,0], 0.001)])
+        lineR_fino = OR + vectorR * inc_fino
+        lineL_fino = OL + vectorL * inc_fino
+
+        # FINO
+        for idx in range(lineR_fino.shape[0]):
+            distance = LA.norm(lineR_fino[idx, :] - lineL_fino[idx, :])
             if distance <= minimun:
                 minimun = distance
 
@@ -242,14 +253,14 @@ class MyAlgorithm():
                 break
 
 
-        return lineR[idx,:]
+        return 0.001*lineR_fino[idx-1,:]
 
 
 
     def plot3dvector(self,vectorR,vectorL,OR,OL,intersec):
 
         N=100
-        inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 2.0, 0.1)])
+        inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 50, 0.1)])
 
         Pinter0 = np.concatenate((intersec, np.array([0,0,0]))).reshape(-1, 3)
         OLR =  np.concatenate((OL, OR)).reshape(-1, 3)
@@ -271,11 +282,12 @@ class MyAlgorithm():
 
 
     def get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft):
-        vectorR = MyAlgorithm.getVectors(self, matchingR, self.camRightP.getCameraPosition())
+        OR = self.camRightP.getCameraPosition()
+        vectorR = MyAlgorithm.getVectors(self, matchingR, OR, "left")
         vectorL =  np.delete(vectorL,ind_not_match,0)
         # disparity = matchingR[:,1]-keyPointsL[:,1]
         OL = self.camLeftP.getCameraPosition()
-        OR = self.camRightP.getCameraPosition()
+
 
 
         lstPL = []
@@ -290,7 +302,7 @@ class MyAlgorithm():
             # vL = vL[:3]
             intersec = MyAlgorithm.intersection(self,vectorR[idx, :3], vectorL[idx, :3], OR, OL)
             # PL,PR = MyAlgorithm.getpointsMinimunDistance(self,vL,vR,OL,OR)
-            MyAlgorithm.plot3dvector(self, vectorR[idx, :3], vectorL[idx, :3], OR, OL,intersec)
+            # MyAlgorithm.plot3dvector(self, vectorR[idx, :3], vectorL[idx, :3], OR, OL,intersec)
             # lstPL.append(intersec)
             # lstPR.append(PR)
             # average = np.mean((PL,PR),0).tolist()
@@ -321,7 +333,7 @@ class MyAlgorithm():
         imageRight = self.sensor.getImageRight()
 
         os.system("killall gzserver")
-        save= False
+        save = False
 
 
         # KEYPOINTS
