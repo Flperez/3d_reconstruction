@@ -24,6 +24,7 @@ class MyAlgorithm():
         self.imageLeft=np.zeros((320,240,3), np.uint8)
         self.lock = threading.Lock()
 
+
         print("Left Camera Configuration File:")
         self.camLeftP=Progeo(sys.argv[1], "CamACalibration")
         print("Rigth Camera Configuration File:")
@@ -51,7 +52,7 @@ class MyAlgorithm():
         self.lock.release()
 
     def writeTxt(self,path,lst_points):
-        with open(path,'w') as file:
+        with open(path,'a') as file:
             for xyzRGB in lst_points:
                 file.write("%f;%f;%f;%d;%d;%d\n"%(xyzRGB[0],xyzRGB[1],xyzRGB[2],
                                                   xyzRGB[3],xyzRGB[4],xyzRGB[5]))
@@ -89,19 +90,30 @@ class MyAlgorithm():
         self.setRightImageFiltered(cv2.cvtColor(edgesR,cv2.COLOR_GRAY2RGB))
         self.setLeftImageFiltered(cv2.cvtColor(edgesL,cv2.COLOR_GRAY2RGB))
 
-        return keypointsR, keypointsL,edgesR,edgesL
+        return keypointsR.astype(np.int), keypointsL.astype(np.int),edgesR,edgesL
 
 
 
-    def getVectors(self,pointsUV1,posCam,cam="right"):
-        if cam=="right":
-            pointInOpts = np.asarray([self.camLeftP.graficToOptical(np.array([pointIn[1],pointIn[0],1]))
-                                      for pointIn in pointsUV1])
-            point3ds = np.asarray([self.camLeftP.backproject(pointInOpt) for pointInOpt in pointInOpts])
+    def getVectors(self,pointsUV1,posCam,cam="left"):
+        if cam=="left":
+            if len(pointsUV1.shape)==1: #un unico punto
+                pointInOpts = self.camLeftP.graficToOptical(np.array([pointsUV1[1], pointsUV1[0], 1]))
+                point3ds = self.camLeftP.backproject(pointInOpts)
+                return np.asarray((point3ds[:3]-posCam).tolist()+[1])
+            else:
+                pointInOpts = np.asarray([self.camLeftP.graficToOptical(np.array([pointIn[1],pointIn[0],1]))
+                                          for pointIn in pointsUV1])
+                point3ds = np.asarray([self.camLeftP.backproject(pointInOpt) for pointInOpt in pointInOpts])
         else:
-            pointInOpts = np.asarray([self.camRightP.graficToOptical(np.array([pointIn[1], pointIn[0], 1]))
-                                      for pointIn in pointsUV1])
-            point3ds = np.asarray([self.camRightP.backproject(pointInOpt) for pointInOpt in pointInOpts])
+            if len(pointsUV1.shape)==1: #un unico punto
+                pointInOpts = self.camRightP.graficToOptical(np.array([pointsUV1[1], pointsUV1[0], 1]))
+                point3ds = self.camRightP.backproject(pointInOpts)
+                return np.asarray((point3ds[:3]-posCam).tolist()+[1])
+
+            else:
+                pointInOpts = np.asarray([self.camRightP.graficToOptical(np.array([pointIn[1], pointIn[0], 1]))
+                                          for pointIn in pointsUV1])
+                point3ds = np.asarray([self.camRightP.backproject(pointInOpt) for pointInOpt in pointInOpts])
         return np.concatenate((point3ds[:,:3]-posCam*np.ones(pointInOpts.shape), np.ones((pointInOpts.shape[0], 1))), 1)
 
 
@@ -127,16 +139,25 @@ class MyAlgorithm():
                 projected_lst[N].append(projected)
                 projected_lst_grafic[N].append(np.array([projected_grafic[1],projected_grafic[0],1]))
 
-        return projected_lst,projected_lst_grafic
+        return projected_lst_grafic
 
     def drawPoint(self,image,lstPoints,idx,color):
         out = image.copy()
-        out[lstPoints[idx,0],lstPoints[idx,1]]=color
+        if not idx:
+            out[lstPoints[0], lstPoints[1]] = color
+        else:
+            out[lstPoints[idx,0],lstPoints[idx,1]]=color
+
+
         return out
 
     def drawLastPoint(self,image,lstPoints,idx,color=(0,255,255)):
         out = image.copy()
-        cv2.circle(out, (lstPoints[idx, 1], lstPoints[idx, 0]), 3,color, 2)
+        if not idx:
+            cv2.circle(out, (lstPoints[1], lstPoints[0]), 3,color, 2)
+
+        else:
+            cv2.circle(out, (lstPoints[idx, 1], lstPoints[idx, 0]), 3,color, 2)
         return out
 
 
@@ -176,6 +197,7 @@ class MyAlgorithm():
 
             if tuple(best) == tuple(np.zeros((3,))):
                 print "Point not match: ",uvL,idx
+
                 ind_not_match.append(idx)
                 # delete point
 
@@ -201,26 +223,26 @@ class MyAlgorithm():
         return keyPointsL,matchingR,ind_not_match
 
 
-    def getpointsMinimunDistance(self,vL,vR,OL,OR):
-
-        OLR = OR - OL
-        a11 = np.dot(+vR, vL)
-        a12 = np.dot(-vL, vL)
-        a21 = np.dot(vR, vR)
-        a22 = np.dot(-vL, vR)
-
-
-        b1 = np.dot(OLR, vL)
-        b2 = np.dot(OLR, vR)
-
-        a = np.array([[a11, a12], [a21, a22]])
-        b = np.array([b1, b2])
-
-        ts = np.linalg.solve(a, b)
-
-        PL = OL + vL * ts[0]
-        PR = OR + vR * ts[1]
-        return PL,PR
+    # def getpointsMinimunDistance(self,vL,vR,OL,OR):
+    #
+    #     OLR = OR - OL
+    #     a11 = np.dot(+vR, vL)
+    #     a12 = np.dot(-vL, vL)
+    #     a21 = np.dot(vR, vR)
+    #     a22 = np.dot(-vL, vR)
+    #
+    #
+    #     b1 = np.dot(OLR, vL)
+    #     b2 = np.dot(OLR, vR)
+    #
+    #     a = np.array([[a11, a12], [a21, a22]])
+    #     b = np.array([b1, b2])
+    #
+    #     ts = np.linalg.solve(a, b)
+    #
+    #     PL = OL + vL * ts[0]
+    #     PR = OR + vR * ts[1]
+    #     return PL,PR
 
 
     def intersection(self,vectorR,vectorL,OR,OL):
@@ -289,42 +311,73 @@ class MyAlgorithm():
         OL = self.camLeftP.getCameraPosition()
 
 
-
-        lstPL = []
-        lstPR = []
         lstPLR_color = []
         for idx,vL in enumerate(vectorL):
             if idx%100==0:
                 print idx,'/',vectorL.shape[0]
 
-
-            # vR = vectorR[idx,:3]
-            # vL = vL[:3]
             intersec = MyAlgorithm.intersection(self,vectorR[idx, :3], vectorL[idx, :3], OR, OL)
-            # PL,PR = MyAlgorithm.getpointsMinimunDistance(self,vL,vR,OL,OR)
-            # MyAlgorithm.plot3dvector(self, vectorR[idx, :3], vectorL[idx, :3], OR, OL,intersec)
-            # lstPL.append(intersec)
-            # lstPR.append(PR)
-            # average = np.mean((PL,PR),0).tolist()
             color = MyAlgorithm.getColor(self,imageLeft,keyPointsL[idx,:])
             lstPLR_color.append(intersec.tolist()+color)
 
 
-
         return lstPLR_color
+
+    def triangulate(self,pointR,imageRight,vectorL,idx):
+        vL = vectorL[idx,:3]
+        vR = MyAlgorithm.getVectors(self,pointR,self.OR,"right")[:3]
+        intersec = MyAlgorithm.intersection(self, vR, vL, self.OR, self.OL)
+        color = MyAlgorithm.getColor(self, imageRight, pointR)
+        return [intersec.tolist()+color]
+
 
 
     def getColor(self,image,point):
         point = point.astype(np.int)
         return image[point[0],point[1],:].tolist()
 
+    def matchingPoint(self, keyPointL, lst2matchingR, imageR, imageL, edgesR,outR, outL, size=(11, 11),save=False):
+        hsvR = cv2.cvtColor(imageR, cv2.COLOR_RGB2HSV)
+        hsvL = cv2.cvtColor(imageL, cv2.COLOR_RGB2HSV)
+        alfa = 0.75
+        beta = 0.25
+        incu = int(size[0] / 2)
+        incv = int(size[1] / 2)
+
+        patchL = hsvL[keyPointL[0] - incu:keyPointL[0] + incu + 1, keyPointL[1] - incv:keyPointL[1] + incv + 1, :]
+        maximum = 0.5
+        best = np.zeros([3, ])
+
+        # eliminamos repetidos
+        lst2matchingR_unique = np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR))))
+        for jdx, uvR in enumerate(lst2matchingR_unique):
+            # print "uvR,jdx",uvR,jdx
+            # Solo buscamos el matching si es un pixel de contorno
+            if edgesR[uvR[0], uvR[1]] == 255:
+                patchR = hsvR[uvR[0] - incu:uvR[0] + incu + 1, uvR[1] - incv:uvR[1] + incv + 1, :]
+                corr = alfa * MyAlgorithm.correlation_coefficient(self, patchL[:, :, 0], patchR[:, :, 0]) \
+                       + beta * MyAlgorithm.correlation_coefficient(self, patchR[:, :, 1], patchR[:, :, 1])
+                if corr > maximum:
+                    maximum = corr
+                    best = uvR
+
+        outL = MyAlgorithm.drawPoint(self, outL, keyPointL.astype(np.int), None, (0, 255, 0))
+        outL_last = MyAlgorithm.drawLastPoint(self, outL, keyPointL.astype(np.int), None)
 
 
+        if tuple(best) == tuple(np.zeros((3,))):
+            print "Point not match: ", keyPointL
+            return np.zeros((3,)),outR,outL
+            # delete point
 
+        pointR = best.astype(np.int)
 
-
-
-
+        # Draw matching
+        outR = MyAlgorithm.drawPoint(self, outR, pointR.astype(np.int), None, (255, 0, 0))
+        outR_last = MyAlgorithm.drawLastPoint(self, outR, pointR.astype(np.int), None)
+        self.setRightImageFiltered(outR_last)
+        self.setLeftImageFiltered(outL_last)
+        return pointR, outR, outL
 
     def execute(self):
 
@@ -332,7 +385,10 @@ class MyAlgorithm():
         imageLeft = self.sensor.getImageLeft()
         imageRight = self.sensor.getImageRight()
 
-        os.system("killall gzserver")
+        self.OR = self.camRightP.getCameraPosition()
+        self.OL = self.camLeftP.getCameraPosition()
+
+        # os.system("killall gzserver")
         save = False
 
 
@@ -346,7 +402,6 @@ class MyAlgorithm():
         # Lines
         vectorL = MyAlgorithm.getVectors(self,keypointsL,self.camLeftP.getCameraPosition())
 
-        # vectorR = MyAlgorithm.getVectors(self,keypointsR,self.camRightP.getCameraPosition())
 
         # Get M points from N vectors: NxM
         print "Calculating list of 3D points "
@@ -355,24 +410,33 @@ class MyAlgorithm():
 
         # Get NxM projected points from NxM
         print "Projecting points"
-        projected_R,projected_R_Grafic = MyAlgorithm.getlstProjectedPoints(self,lstPoints3d_L)
+
+
+        projected_R_Grafic = MyAlgorithm.getlstProjectedPoints(self,lstPoints3d_L)
+        outR = cv2.cvtColor(edgesR, cv2.COLOR_GRAY2RGB)
+        outL = cv2.cvtColor(edgesL, cv2.COLOR_GRAY2RGB)
 
         # Matching point
         print "Matching"
-        keyPointsL, matchingR, ind_not_match = MyAlgorithm.matchingPoints(self,keypointsL,
-                                                                        projected_R_Grafic,imageRight,
-                                                                        imageLeft,edgesR,edgesL,save=save)
-        print "Done!"
+        for idx,projected_R in enumerate(projected_R_Grafic):
+            if idx%100==0:
+                print idx,'/',len(projected_R_Grafic)
 
-        print "Triangulating points"
-        lst3dcolor = MyAlgorithm.get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft)
 
-        write = True
-        if write:
-            print "Writing data"
-            MyAlgorithm.writeTxt(self,"ptsColor_intersec.txt",lst3dcolor)
-            print "Done!"
-            sys.exit()
+            pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:], projected_R,imageRight,
+                                                                imageLeft,edgesR,outR,outL,save=save)
+
+
+
+            if tuple(pointR) != tuple(np.zeros((3,))):
+                point3DColor = MyAlgorithm.triangulate(self,pointR,imageRight,vectorL,idx)
+                write = True
+                if write:
+                    MyAlgorithm.writeTxt(self,"ptsColor_unoporuno.txt",point3DColor)
+                else:
+                    self.sensor.drawPoint(np.array([point3DColor[0], point3DColor[1], point3DColor[2]]),
+                                      (point3DColor[3], point3DColor[4], point3DColor[5]))
+
 
         if self.done:
             return
