@@ -51,11 +51,18 @@ class MyAlgorithm():
         self.imageLeft=image
         self.lock.release()
 
-    def writeTxt(self,path,lst_points):
-        with open(path,'a') as file:
-            for xyzRGB in lst_points:
-                file.write("%f;%f;%f;%d;%d;%d\n"%(xyzRGB[0],xyzRGB[1],xyzRGB[2],
-                                                  xyzRGB[3],xyzRGB[4],xyzRGB[5]))
+    def writeTxt(self,path,lst_points,mode = "lista"):
+        if mode=="lista":
+            with open(path,'w') as file:
+
+                for xyzRGB in lst_points:
+                    file.write("%f;%f;%f;%d;%d;%d\n"%(xyzRGB[0],xyzRGB[1],xyzRGB[2],
+                                                      xyzRGB[3],xyzRGB[4],xyzRGB[5]))
+        else:
+            with open(path, 'a') as file:
+                file.write("%f;%f;%f;%d;%d;%d\n" % (lst_points[0], lst_points[1], lst_points[2],
+                                                    lst_points[3], lst_points[4], lst_points[5]))
+
 
     def correlation_coefficient(self,patch1, patch2):
         if patch1.shape[1] < patch2.shape[1]:
@@ -128,7 +135,6 @@ class MyAlgorithm():
         return lst
 
     def getlstProjectedPoints(self,lst3d):
-        projected_lst = [[] for N in range(len(lst3d))]
         projected_lst_grafic = [[] for N in range(len(lst3d))]
         for N in range(len(lst3d)):
             if N%100==0:
@@ -136,15 +142,37 @@ class MyAlgorithm():
             for idx,xyz in enumerate(lst3d[N]):
                 projected = self.camRightP.project(xyz)
                 projected_grafic = np.floor(self.camRightP.opticalToGrafic(projected)).astype(np.int)
-                projected_lst[N].append(projected)
                 projected_lst_grafic[N].append(np.array([projected_grafic[1],projected_grafic[0],1]))
 
         return projected_lst_grafic
 
+
+
+    def getProjectedPoints(self,lstPoints3d,cam):
+        projected_lst_grafic = []
+        for idx, xyz in enumerate(lstPoints3d):
+            if cam == "right":
+                projected = self.camRightP.project(xyz)
+                projected_grafic = np.floor(self.camRightP.opticalToGrafic(projected)).astype(np.int)
+            if cam == "left":
+                projected = self.camLeftP.project(xyz)
+                projected_grafic = np.floor(self.camLeftP.opticalToGrafic(projected)).astype(np.int)
+            projected_lst_grafic.append(np.array([projected_grafic[1], projected_grafic[0], 1]))
+        return projected_lst_grafic
+
+
+
+
+
+
     def drawPoint(self,image,lstPoints,idx,color):
         out = image.copy()
         if not idx:
-            out[lstPoints[0], lstPoints[1]] = color
+            if len(lstPoints.shape)==1:
+                out[lstPoints[0], lstPoints[1]] = color
+            else:
+                for uv in lstPoints:
+                    out[uv[0], uv[1]] = color
         else:
             out[lstPoints[idx,0],lstPoints[idx,1]]=color
 
@@ -275,7 +303,7 @@ class MyAlgorithm():
                 break
 
 
-        return 0.001*lineR_fino[idx-1,:]
+        return lineR_fino[idx-1,:]
 
 
 
@@ -328,7 +356,7 @@ class MyAlgorithm():
         vR = MyAlgorithm.getVectors(self,pointR,self.OR,"right")[:3]
         intersec = MyAlgorithm.intersection(self, vR, vL, self.OR, self.OL)
         color = MyAlgorithm.getColor(self, imageRight, pointR)
-        return [intersec.tolist()+color]
+        return intersec.tolist()+color
 
 
 
@@ -388,13 +416,18 @@ class MyAlgorithm():
         self.OR = self.camRightP.getCameraPosition()
         self.OL = self.camLeftP.getCameraPosition()
 
-        # os.system("killall gzserver")
+        os.system("killall gzserver")
         save = False
+        write = True
+        visor = True
 
 
         # KEYPOINTS
         print "Calculating canny"
         keypointsR, keypointsL,edgesR,edgesL = MyAlgorithm.findKeypoints(self,imageR=imageRight,imageL=imageLeft)
+        outR = cv2.cvtColor(edgesR, cv2.COLOR_GRAY2RGB)
+        outL = cv2.cvtColor(edgesL, cv2.COLOR_GRAY2RGB)
+
         print "Keypoints Right: {:d}\t Keypoints Left: {:d}".format(keypointsR.shape[0],keypointsL.shape[0])
         print "Done!"
 
@@ -409,56 +442,37 @@ class MyAlgorithm():
         print "Dimension",len(lstPoints3d_L),"x",len(lstPoints3d_L[0])
 
         # Get NxM projected points from NxM
-        print "Projecting points"
 
-
-        projected_R_Grafic = MyAlgorithm.getlstProjectedPoints(self,lstPoints3d_L)
-        outR = cv2.cvtColor(edgesR, cv2.COLOR_GRAY2RGB)
-        outL = cv2.cvtColor(edgesL, cv2.COLOR_GRAY2RGB)
-
-        # Matching point
-        print "Matching"
-        for idx,projected_R in enumerate(projected_R_Grafic):
+        for idx,Points3d_L in enumerate(lstPoints3d_L):
             if idx%100==0:
-                print idx,'/',len(projected_R_Grafic)
+                print idx,'/',len(lstPoints3d_L)
 
+            # print "Projecting points"
+            projected_R = MyAlgorithm.getProjectedPoints(self,Points3d_L,cam="right")
+            # Eliminamos los repetidos
+            projected_R_unique =  np.array(list(set(tuple(p) for p in np.asarray(projected_R))))
 
-            pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:], projected_R,imageRight,
+            #pintamos los puntos proyectados
+            outR_line = MyAlgorithm.drawPoint(self,outR,projected_R_unique,None,(255,255,0))
+            self.setRightImageFiltered(outR_line)
+
+            pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:], projected_R_unique,imageRight,
                                                                 imageLeft,edgesR,outR,outL,save=save)
+
 
 
 
             if tuple(pointR) != tuple(np.zeros((3,))):
                 point3DColor = MyAlgorithm.triangulate(self,pointR,imageRight,vectorL,idx)
-                write = True
+
                 if write:
-                    MyAlgorithm.writeTxt(self,"ptsColor_unoporuno.txt",point3DColor)
-                else:
+                    MyAlgorithm.writeTxt(self,"ptsColor_unoporuno.txt",point3DColor,mode="unico")
+
+                if visor:
                     self.sensor.drawPoint(np.array([point3DColor[0], point3DColor[1], point3DColor[2]]),
                                       (point3DColor[3], point3DColor[4], point3DColor[5]))
 
 
         if self.done:
             return
-
-
-        # Add your code here
-        # pointIn=np.array([502,21,1])
-        # pointInOpt=self.camLeftP.graficToOptical(pointIn)
-        # point3d=self.camLeftP.backproject(pointInOpt)
-        # projected1 = self.camRightP.project(point3d)
-        # print (self.camRightP.opticalToGrafic(projected1))
-
-        #EXAMPLE OF HOW TO SEND INFORMATION TO THE ROBOT ACTUATORS
-        #self.sensor.setV(10)
-        #self.sensor.setW(5)
-
-
-        #SHOW THE FILTERED IMAGE ON THE GUI
-        # self.setRightImageFiltered(imageRight)
-        # self.setLeftImageFiltered(imageLeft)
-
-        #PLOT 3D data on the viewer
-        #point=np.array([1, 1, 1])
-        #self.sensor.drawPoint(point,(255,255,255))
 
