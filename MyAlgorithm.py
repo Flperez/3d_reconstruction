@@ -362,7 +362,8 @@ class MyAlgorithm():
 
     def getColor(self,image,point):
         point = point.astype(np.int)
-        return image[point[0],point[1],:].tolist()
+        color = image[point[0], point[1], :].astype(np.float)/255
+        return color.tolist()
 
     def matchingPoint(self, keyPointL, lst2matchingR, imageR, imageL, edgesR,outR, outL, size=(11, 11),save=False):
         hsvR = cv2.cvtColor(imageR, cv2.COLOR_RGB2HSV)
@@ -377,8 +378,7 @@ class MyAlgorithm():
         best = np.zeros([3, ])
 
         # eliminamos repetidos
-        lst2matchingR_unique = np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR))))
-        for jdx, uvR in enumerate(lst2matchingR_unique):
+        for jdx, uvR in enumerate(lst2matchingR):
             # print "uvR,jdx",uvR,jdx
             # Solo buscamos el matching si es un pixel de contorno
             if edgesR[uvR[0], uvR[1]] == 255:
@@ -402,7 +402,9 @@ class MyAlgorithm():
 
         # Draw matching
         outR = MyAlgorithm.drawPoint(self, outR, pointR.astype(np.int), None, (255, 0, 0))
-        outR_last = MyAlgorithm.drawLastPoint(self, outR, pointR.astype(np.int), None)
+        # pintamos los puntos proyectados
+        outR_last = MyAlgorithm.drawPoint(self, outR, lst2matchingR, None, (255, 255, 0))
+        outR_last = MyAlgorithm.drawLastPoint(self, outR_last, pointR.astype(np.int), None)
         self.setRightImageFiltered(outR_last)
         self.setLeftImageFiltered(outL_last)
         return pointR, outR, outL
@@ -419,7 +421,7 @@ class MyAlgorithm():
         os.system("killall gzserver")
         save = False
         write = True
-        visor = True
+        visor = False
 
 
         # KEYPOINTS
@@ -449,13 +451,12 @@ class MyAlgorithm():
 
             # print "Projecting points"
             projected_R = MyAlgorithm.getProjectedPoints(self,Points3d_L,cam="right")
+
             # Eliminamos los repetidos
             projected_R_unique =  np.array(list(set(tuple(p) for p in np.asarray(projected_R))))
 
-            #pintamos los puntos proyectados
-            outR_line = MyAlgorithm.drawPoint(self,outR,projected_R_unique,None,(255,255,0))
-            self.setRightImageFiltered(outR_line)
 
+            # Matching
             pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:], projected_R_unique,imageRight,
                                                                 imageLeft,edgesR,outR,outL,save=save)
 
@@ -475,4 +476,3 @@ class MyAlgorithm():
 
         if self.done:
             return
-
