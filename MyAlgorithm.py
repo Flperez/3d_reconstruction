@@ -52,6 +52,13 @@ class MyAlgorithm():
         self.lock.release()
 
     def writeTxt(self,path,lst_points,mode = "lista"):
+        '''
+
+        :param path: path to write list of points: path
+        :param lst_points: list of points
+        :param mode: modo lista: recibe lista de puntos; modo: not lista: abre el fichero modo append y escribe el punto
+        :return: Nothing
+        '''
         if mode=="lista":
             with open(path,'w') as file:
 
@@ -65,6 +72,12 @@ class MyAlgorithm():
 
 
     def correlation_coefficient(self,patch1, patch2):
+        '''
+
+        :param patch1: patch image 1
+        :param patch2: patch image 2
+        :return: mean of similarity
+        '''
         if patch1.shape[1] < patch2.shape[1]:
             patch2 = patch2[:,0:patch1.shape[1]]
 
@@ -80,6 +93,12 @@ class MyAlgorithm():
             return product
 
     def findKeypoints(self,imageR,imageL):
+        '''
+
+        :param imageR: image right
+        :param imageL: image left
+        :return: list of points to right and left images: coordinates [u,v]
+        '''
         grayR = cv2.cvtColor(imageR,cv2.COLOR_RGB2GRAY)
 
         edgesR = cv2.Canny(grayR, 100, 200)
@@ -102,6 +121,13 @@ class MyAlgorithm():
 
 
     def getVectors(self,pointsUV1,posCam,cam="left"):
+        '''
+
+        :param pointsUV1: points [u v 1]
+        :param posCam: camera postion
+        :param cam: camr "right" or "left"
+        :return: a vector pointsUV-posCam
+        '''
         if cam=="left":
             if len(pointsUV1.shape)==1: #un unico punto
                 pointInOpts = self.camLeftP.graficToOptical(np.array([pointsUV1[1], pointsUV1[0], 1]))
@@ -125,6 +151,13 @@ class MyAlgorithm():
 
 
     def getPointsfromline(self,vectors,Origin,M=150):
+        '''
+
+        :param vectors: vector of line
+        :param Origin: orgin of line
+        :param M: number of points for every vector
+        :return: list of np array with points (homogeneous coordinate)
+        '''
         lst = [[] for N in range(vectors.shape[0])]
         alfas = np.linspace(1,M,M)
         for idx,Vxyz in enumerate(vectors):
@@ -134,21 +167,14 @@ class MyAlgorithm():
 
         return lst
 
-    def getlstProjectedPoints(self,lst3d):
-        projected_lst_grafic = [[] for N in range(len(lst3d))]
-        for N in range(len(lst3d)):
-            if N%100==0:
-                print N,"/",len(lst3d)
-            for idx,xyz in enumerate(lst3d[N]):
-                projected = self.camRightP.project(xyz)
-                projected_grafic = np.floor(self.camRightP.opticalToGrafic(projected)).astype(np.int)
-                projected_lst_grafic[N].append(np.array([projected_grafic[1],projected_grafic[0],1]))
-
-        return projected_lst_grafic
-
-
 
     def getProjectedPoints(self,lstPoints3d,cam):
+        '''
+
+        :param lstPoints3d: list of 3d points
+        :param cam: 3d to camera: "right" or "left"
+        :return: list of projected points
+        '''
         projected_lst_grafic = []
         for idx, xyz in enumerate(lstPoints3d):
             if cam == "right":
@@ -162,10 +188,15 @@ class MyAlgorithm():
 
 
 
-
-
-
     def drawPoint(self,image,lstPoints,idx,color):
+        '''
+        set color in a pixel [index]
+        :param image: image
+        :param lstPoints: lst of points
+        :param idx: choosen pixel or not
+        :param color: color tuple (R,G,B)
+        :return: image out
+        '''
         out = image.copy()
         if not idx:
             if len(lstPoints.shape)==1:
@@ -175,105 +206,28 @@ class MyAlgorithm():
                     out[uv[0], uv[1]] = color
         else:
             out[lstPoints[idx,0],lstPoints[idx,1]]=color
-
-
         return out
+
 
     def drawLastPoint(self,image,lstPoints,idx,color=(0,255,255)):
         out = image.copy()
         if not idx:
             cv2.circle(out, (lstPoints[1], lstPoints[0]), 3,color, 2)
-
         else:
             cv2.circle(out, (lstPoints[idx, 1], lstPoints[idx, 0]), 3,color, 2)
         return out
 
 
-    def matchingPoints(self,keyPointsL,lst2matchingR,imageR,imageL,edgesR,edgesL,size=(11,11),save=False):
-        hsvR = cv2.cvtColor(imageR,cv2.COLOR_RGB2HSV)
-        hsvL = cv2.cvtColor(imageL,cv2.COLOR_RGB2HSV)
-        alfa = 0.75
-        beta = 0.25
-        incu = int(size[0]/2)
-        incv = int(size[1]/2)
-        ind_not_match = []
-
-        matchingR = np.zeros(keyPointsL.shape)
-
-        outR = cv2.cvtColor(edgesR,cv2.COLOR_GRAY2RGB)
-        outL = cv2.cvtColor(edgesL,cv2.COLOR_GRAY2RGB)
-
-        for idx,uvL in enumerate(keyPointsL.astype(np.int)):
-            if idx%100==0:
-                print idx,'/',keyPointsL.shape[0]
-            # print "uvL,idx", uvL,idx
-            patchL = hsvL[uvL[0]-incu:uvL[0]+incu+1,uvL[1]-incv:uvL[1]+incv+1,:]
-            maximum = 0.5
-            best = np.zeros([3,])
-            # eliminamos repetidos
-            lst2matchingR_unique=np.array(list(set(tuple(p) for p in np.asarray(lst2matchingR[idx]))))
-            for jdx,uvR in enumerate(lst2matchingR_unique):
-                # print "uvR,jdx",uvR,jdx
-                # Solo buscamos el matching si es un pixel de contorno
-                if edgesR[uvR[0],uvR[1]]==255:
-                    patchR = hsvR[uvR[0] - incu:uvR[0] + incu+1, uvR[1] - incv:uvR[1] + incv+1, :]
-                    corr = alfa*MyAlgorithm.correlation_coefficient(self,patchL[:,:,0],patchR[:,:,0])\
-                           +beta*MyAlgorithm.correlation_coefficient(self,patchR[:,:,1],patchR[:,:,1])
-                    if corr > maximum:
-                        maximum = corr
-                        best = uvR
-
-            if tuple(best) == tuple(np.zeros((3,))):
-                print "Point not match: ",uvL,idx
-
-                ind_not_match.append(idx)
-                # delete point
-
-
-            matchingR[idx,:] = best.astype(np.int)
-
-            # Draw matching
-            outR = MyAlgorithm.drawPoint(self,outR,matchingR.astype(np.int),idx,(255,0,0))
-            outL = MyAlgorithm.drawPoint(self,outL,keyPointsL.astype(np.int),idx,(0,255,0))
-            outR_last = MyAlgorithm.drawLastPoint(self, outR, matchingR.astype(np.int), idx)
-            outL_last = MyAlgorithm.drawLastPoint(self, outL, keyPointsL.astype(np.int), idx)
-            self.setRightImageFiltered(outR_last)
-            self.setLeftImageFiltered(outL_last)
-
-
-
-        #Borramos aquellos puntos donde no se ha hecho correctamente el matching
-        matchingR = np.delete(matchingR, ind_not_match, 0)
-        keyPointsL = np.delete(keyPointsL,ind_not_match,0)
-        if save:
-            np.save("matchingR.npy",matchingR)
-
-        return keyPointsL,matchingR,ind_not_match
-
-
-    # def getpointsMinimunDistance(self,vL,vR,OL,OR):
-    #
-    #     OLR = OR - OL
-    #     a11 = np.dot(+vR, vL)
-    #     a12 = np.dot(-vL, vL)
-    #     a21 = np.dot(vR, vR)
-    #     a22 = np.dot(-vL, vR)
-    #
-    #
-    #     b1 = np.dot(OLR, vL)
-    #     b2 = np.dot(OLR, vR)
-    #
-    #     a = np.array([[a11, a12], [a21, a22]])
-    #     b = np.array([b1, b2])
-    #
-    #     ts = np.linalg.solve(a, b)
-    #
-    #     PL = OL + vL * ts[0]
-    #     PR = OR + vR * ts[1]
-    #     return PL,PR
-
 
     def intersection(self,vectorR,vectorL,OR,OL):
+        '''
+
+        :param vectorR: Vector camera right
+        :param vectorL: Vector camera left
+        :param OR: origin camera right
+        :param OL: origin camera right
+        :return:
+        '''
 
         # Grueso
         inc_grueso = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 50.0, 0.01)])
@@ -308,6 +262,15 @@ class MyAlgorithm():
 
 
     def plot3dvector(self,vectorR,vectorL,OR,OL,intersec):
+        '''
+
+        :param vectorR: Vector camera right
+        :param vectorL: Vector camera left
+        :param OR: origin camera right
+        :param OL: origin camera right
+        :param intersec: intersection point
+        :return:
+        '''
 
         N=100
         inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 50, 0.1)])
@@ -331,27 +294,15 @@ class MyAlgorithm():
         return
 
 
-    def get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft):
-        OR = self.camRightP.getCameraPosition()
-        vectorR = MyAlgorithm.getVectors(self, matchingR, OR, "left")
-        vectorL =  np.delete(vectorL,ind_not_match,0)
-        # disparity = matchingR[:,1]-keyPointsL[:,1]
-        OL = self.camLeftP.getCameraPosition()
-
-
-        lstPLR_color = []
-        for idx,vL in enumerate(vectorL):
-            if idx%100==0:
-                print idx,'/',vectorL.shape[0]
-
-            intersec = MyAlgorithm.intersection(self,vectorR[idx, :3], vectorL[idx, :3], OR, OL)
-            color = MyAlgorithm.getColor(self,imageLeft,keyPointsL[idx,:])
-            lstPLR_color.append(intersec.tolist()+color)
-
-
-        return lstPLR_color
-
     def triangulate(self,pointR,imageRight,vectorL,idx):
+        '''
+
+        :param pointR:
+        :param imageRight:
+        :param vectorL:
+        :param idx:
+        :return:
+        '''
         vL = vectorL[idx,:3]
         vR = MyAlgorithm.getVectors(self,pointR,self.OR,"right")[:3]
         intersec = MyAlgorithm.intersection(self, vR, vL, self.OR, self.OL)
@@ -361,11 +312,29 @@ class MyAlgorithm():
 
 
     def getColor(self,image,point):
+        '''
+
+        :param image: image
+        :param point: point
+        :return: list of color [R,G,B]
+        '''
         point = point.astype(np.int)
         color = image[point[0], point[1], :].astype(np.float)/255
         return color.tolist()
 
-    def matchingPoint(self, keyPointL, lst2matchingR, imageR, imageL, edgesR,outR, outL, size=(11, 11),save=False):
+    def matchingPoint(self, keyPointL, lst2matchingR, imageR, imageL, edgesR,outR, outL, size=(11, 11)):
+        '''
+
+        :param keyPointL: keyponts image L
+        :param lst2matchingR: epipolar line
+        :param imageR: image right
+        :param imageL: image left
+        :param edgesR: image contours
+        :param outR: image out right
+        :param outL: image out left
+        :param size: size of neighbourhood
+        :return:
+        '''
         hsvR = cv2.cvtColor(imageR, cv2.COLOR_RGB2HSV)
         hsvL = cv2.cvtColor(imageL, cv2.COLOR_RGB2HSV)
         alfa = 0.75
@@ -379,7 +348,6 @@ class MyAlgorithm():
 
         # eliminamos repetidos
         for jdx, uvR in enumerate(lst2matchingR):
-            # print "uvR,jdx",uvR,jdx
             # Solo buscamos el matching si es un pixel de contorno
             if edgesR[uvR[0], uvR[1]] == 255:
                 patchR = hsvR[uvR[0] - incu:uvR[0] + incu + 1, uvR[1] - incv:uvR[1] + incv + 1, :]
@@ -433,10 +401,9 @@ class MyAlgorithm():
         print "Keypoints Right: {:d}\t Keypoints Left: {:d}".format(keypointsR.shape[0],keypointsL.shape[0])
         print "Done!"
 
-        print "Calculating all vectors from left camera"
         # Lines
+        print "Calculating all vectors from left camera"
         vectorL = MyAlgorithm.getVectors(self,keypointsL,self.camLeftP.getCameraPosition())
-
 
         # Get M points from N vectors: NxM
         print "Calculating list of 3D points "
@@ -444,7 +411,6 @@ class MyAlgorithm():
         print "Dimension",len(lstPoints3d_L),"x",len(lstPoints3d_L[0])
 
         # Get NxM projected points from NxM
-
         for idx,Points3d_L in enumerate(lstPoints3d_L):
             if idx%100==0:
                 print idx,'/',len(lstPoints3d_L)
@@ -459,8 +425,6 @@ class MyAlgorithm():
             # Matching
             pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:], projected_R_unique,imageRight,
                                                                 imageLeft,edgesR,outR,outL,save=save)
-
-
 
 
             if tuple(pointR) != tuple(np.zeros((3,))):
