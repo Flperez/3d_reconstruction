@@ -318,6 +318,7 @@ class MyAlgorithm():
         vL = vectorL[idx,:3]
         vR = MyAlgorithm.getVectors(self,pointR,self.OR,"right")[:3]
         intersec = MyAlgorithm.intersection(self, vR, vL, self.OR, self.OL)
+        pa,pb = MyAlgorithm.intersectionEcuation(self, vR, vL, self.OR, self.OL)
         color = MyAlgorithm.getColor(self, imageRight, pointR)
         return intersec.tolist()+color
 
@@ -369,6 +370,25 @@ class MyAlgorithm():
         self.setLeftImageFiltered(outL_last)
         return pointR, outR, outL
 
+
+    def intersectionEcuation(self,vectorR,vectorL,OR,OL):
+        ORL = OR-OL
+        d1343 = ORL[0]*vectorL[0]+ORL[1]*vectorL[1]+ORL[2]*vectorL[2]
+        d4321 = vectorL[0]*vectorR[0]+vectorL[1]*vectorR[1]+vectorL[2]*vectorR[2]
+        d1321 = ORL[0]**vectorR[0]+ORL[1]**vectorR[1]+ORL[2]**vectorR[2]
+        d4343 = vectorL[0]*vectorL[0]+vectorL[1]*vectorL[1]+vectorL[2]*vectorL[2]
+        d2121 = vectorR[0]*vectorR[0]+vectorR[1]*vectorR[1]+vectorR[2]*vectorR[2]
+        denom = d2121 * d4343 - d4321 * d4321
+        numer = d1343 * d4321 - d1321 * d4343
+
+        mua = numer / denom
+        mub = (d1343 + d4321 * (mua)) / d4343
+
+        pa = OR+vectorR*mua
+        pb = OL+vectorL*mub
+        return pa,pb
+
+
     def execute(self):
 
         # OBTENCIÓN DE IMÁGENES
@@ -414,16 +434,15 @@ class MyAlgorithm():
         # Get NxM projected points from NxM
 
         for idx,Points3d_L in enumerate(lstPoints3d_L):
-            if idx%25==0 and idx>0:
+            if idx%100==0 and idx>0:
                 print idx,'/',len(lstPoints3d_L),"T: ", time.clock() - self.time
                 # self.outEpipol[:,:self.width,:]=self.outL_line
                 # self.outEpipol[:,self.width:,:]=self.outR_line
                 # cv2.imwrite("result/imagenes_epipolar/LR/imag_epipol" + str(idx) + ".png",  self.outEpipol)
 
-                # cv2.imwrite("result/imagenes_epipolar/R/imagR_epipol"+str(idx)+".png",self.outR_line)
+                # cv2.imwrite("result/imagenes_epipolar/Rk/imagR_epipol"+str(idx)+".png",self.outR_line)
                 # cv2.imwrite("result/imagenes_epipolar/L/imagL_epipol"+str(idx)+".png",self.outL_line)
 
-            # print "K", keypointsL[idx,:]
 
             m, n, begin, end = MyAlgorithm.getLineEpipolar(self,Points3d_L,cam="right")
             projected_R = MyAlgorithm.getPointsfromEpipolar(self,m,n,begin,end)
