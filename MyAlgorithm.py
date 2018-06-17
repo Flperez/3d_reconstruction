@@ -354,7 +354,7 @@ class MyAlgorithm():
 
 
         write = False
-        visor = False
+        visor = True
 
 
         # KEYPOINTS
@@ -407,7 +407,7 @@ class MyAlgorithm():
                 # Pintamos
                 if point3D.size !=0:
                     if write:
-                         MyAlgorithm.writeTxt(self,"result/SAD_25.txt",point3D,color,)
+                         MyAlgorithm.writeTxt(self,"pts3DColor",point3D,color,)
 
                     if visor:
                         self.sensor.drawPoint(point=point3D,color=color)
