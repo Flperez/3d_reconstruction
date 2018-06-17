@@ -51,20 +51,20 @@ class MyAlgorithm():
         self.imageLeft=image
         self.lock.release()
 
-    def writeTxt(self,path,lst_points,mode = "lista"):
-        if mode=="lista":
-            with open(path,'w') as file:
-
-                for xyzRGB in lst_points:
-                    file.write("%f;%f;%f;%d;%d;%d\n"%(xyzRGB[0],xyzRGB[1],xyzRGB[2],
-                                                      xyzRGB[3],xyzRGB[4],xyzRGB[5]))
-        else:
-            with open(path, 'a') as file:
-                file.write("%f;%f;%f;%d;%d;%d\n" % (lst_points[0], lst_points[1], lst_points[2],
-                                                    lst_points[3], lst_points[4], lst_points[5]))
+    def writeTxt(self,path,points,color):
+        '''
+        Funcion para escribir en un txt los puntos con su color
+            Escribe de uno en uno
+        '''
+        with open(path, 'a') as file:
+            file.write("%f;%f;%f;%f;%f;%f\n" % (points[0], points[1], points[2],
+                                                color[0], color[1], color[2]))
 
 
     def correlation_coefficient(self,patch1, patch2):
+        '''
+        Funcion que calcula el nivel de similitud entre dos parches
+        '''
         if patch1.shape[1] < patch2.shape[1]:
             patch2 = patch2[:,0:patch1.shape[1]]
 
@@ -80,6 +80,9 @@ class MyAlgorithm():
             return product
 
     def findKeypoints(self,imageR,imageL):
+        '''
+        Funcion que calcula los puntos de interes donde vamos a recrear la escena
+        '''
         grayR = cv2.cvtColor(imageR,cv2.COLOR_RGB2GRAY)
 
         edgesR = cv2.Canny(grayR, 100, 200)
@@ -102,6 +105,9 @@ class MyAlgorithm():
 
 
     def getVectors(self,pointsUV1,posCam,cam="left"):
+        '''
+        Calcula los vectores de las rectas en el espacio [XYZ1]
+        '''
         if cam=="left":
             if len(pointsUV1.shape)==1: #un unico punto
                 pointInOpts = self.camLeftP.graficToOptical(np.array([pointsUV1[1], pointsUV1[0], 1]))
@@ -125,33 +131,26 @@ class MyAlgorithm():
 
 
     def getPointsfromline(self,vectors,Origin):
+        '''
+        Devuelve una lista de puntos XYZ de la recta definida por su vector y su origen
+        y=mx+n
+        '''
         lst = [[] for N in range(vectors.shape[0])]
-        # alfas = np.linspace(10,20,M)
         alfas = [10,100,10000]
         for idx,Vxyz in enumerate(vectors):
             for alfa in alfas:
                 xyz = Origin + Vxyz[:3]*alfa
                 lst[idx].append(np.array([xyz[0],xyz[1],xyz[2],1]))
-
         return lst
 
-    def getlstProjectedPoints(self,lst3d):
-        projected_lst_grafic = [[] for N in range(len(lst3d))]
-        for N in range(len(lst3d)):
-            if N%100==0:
-                print N,"/",len(lst3d)
-            for idx,xyz in enumerate(lst3d[N]):
-                projected = self.camRightP.project(xyz)
-                projected_grafic = np.floor(self.camRightP.opticalToGrafic(projected)).astype(np.int)
-                projected_lst_grafic[N].append(np.array([projected_grafic[1],projected_grafic[0],1]))
-
-        return projected_lst_grafic
 
 
     def getLineEpipolar(self,lstPoints3d,cam):
+        '''
+        Recibe los puntos XYZ1 -> proyecta a coordenadas pixeles
+        Calcula m y n (y=mx+n) y el punto inicial y final del eje horizontal
+        '''
         projected_lst_grafic = []
-        m=0
-        n=0
         for idx, xyz in enumerate(lstPoints3d):
             if cam == "right":
                 projected = self.camRightP.project(xyz)
@@ -169,6 +168,10 @@ class MyAlgorithm():
         return m,n,begin,end
 
     def getPointsfromEpipolar(self,m,n,begin,end,size=5):
+        '''
+        Funcion encargada de crear todos los puntos pertenecientes a la linea epipolar
+        Recibe los parametros de la recta y los puntos donde debe iterar y el grosor de la recta
+        '''
         horizontal = np.arange(begin, end+1).reshape(-1, 1)
         inc = int(size/2)
         n_inc = np.arange(-inc + n, n + inc + 1)
@@ -194,24 +197,13 @@ class MyAlgorithm():
 
 
 
-    def getProjectedPoints(self,lstPoints3d,cam):
-        projected_lst_grafic = []
-        for idx, xyz in enumerate(lstPoints3d):
-            if cam == "right":
-                projected = self.camRightP.project(xyz)
-                projected_grafic = np.floor(self.camRightP.opticalToGrafic(projected)).astype(np.int)
-            if cam == "left":
-                projected = self.camLeftP.project(xyz)
-                projected_grafic = np.floor(self.camLeftP.opticalToGrafic(projected)).astype(np.int)
-            projected_lst_grafic.append(np.array([projected_grafic[1], projected_grafic[0], 1]))
-        return projected_lst_grafic
-
-
-
-
 
 
     def drawPoint(self,image,lstPoints,idx,color):
+        '''
+        Cambia el nivel de intensidad de una imagen por el color elegido
+        Puedes elegir un indice en concreto si deseas
+        '''
         out = image.copy()
         if not idx:
             if len(lstPoints.shape)==1:
@@ -220,11 +212,12 @@ class MyAlgorithm():
                 out[lstPoints[:,0], lstPoints[:,1],:] = color
         else:
             out[lstPoints[idx,0],lstPoints[idx,1]]= color
-
-
         return out
 
     def drawLastPoint(self,image,lstPoints,idx,color=(0,255,255)):
+        '''
+        Dibuja un circulo en la posicion
+        '''
         out = image.copy()
         if not idx:
             cv2.circle(out, (lstPoints[1], lstPoints[0]), 3,color, 2)
@@ -236,102 +229,47 @@ class MyAlgorithm():
 
 
 
-    def intersection(self,vectorR,vectorL,OR,OL):
 
-        # Grueso
-        inc_grueso = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 50.0, 0.01)])
-        lineR_grueso = OR+vectorR*inc_grueso
-        lineL_grueso = OL+vectorL*inc_grueso
-
-        minimun = LA.norm(OR-OL)
-        for idx in range(lineR_grueso.shape[0]):
-            distance = LA.norm(lineR_grueso[idx,:]-lineL_grueso[idx,:])
-            if distance <= minimun:
-                minimun = distance
-
-            else:
-                break
-
-        inc_fino = np.asarray([np.repeat(value, 3, 0) for value in np.arange(inc_grueso[idx-1,0], inc_grueso[idx,0], 0.001)])
-        lineR_fino = OR + vectorR * inc_fino
-        lineL_fino = OL + vectorL * inc_fino
-
-        # FINO
-        for idx in range(lineR_fino.shape[0]):
-            distance = LA.norm(lineR_fino[idx, :] - lineL_fino[idx, :])
-            if distance <= minimun:
-                minimun = distance
-
-            else:
-                break
-
-
-        return lineR_fino[idx-1,:]
-
-
-
-    def plot3dvector(self,vectorR,vectorL,OR,OL,intersec):
-
-        N=100
-        inc = np.asarray([np.repeat(value,3,0) for value in np.arange(0.0, 50, 0.1)])
-
-        Pinter0 = np.concatenate((intersec, np.array([0,0,0]))).reshape(-1, 3)
-        OLR =  np.concatenate((OL, OR)).reshape(-1, 3)
-        lineR = OR+vectorR*inc
-        lineL = OL+vectorL*inc
-        fig = plt.figure()
-
-        ax = fig.gca(projection='3d')
-
-        ax.plot(lineR[:,0],lineR[:,1],lineR[:,2],'b')
-        ax.plot(lineL[:,0],lineL[:,1],lineL[:,2],'r')
-        ax.plot(Pinter0[:,0], Pinter0[:,1], Pinter0[:,2], 'k')
-        ax.plot(OLR[:,0], OLR[:,1], OLR[:,2], 'g')
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        plt.show()
-        return
-
-
-    def get3dColor(self,matchingR,keyPointsL,vectorL,ind_not_match,imageLeft):
-        OR = self.camRightP.getCameraPosition()
-        vectorR = MyAlgorithm.getVectors(self, matchingR, OR, "left")
-        vectorL =  np.delete(vectorL,ind_not_match,0)
-        # disparity = matchingR[:,1]-keyPointsL[:,1]
-        OL = self.camLeftP.getCameraPosition()
-
-
-        lstPLR_color = []
-        for idx,vL in enumerate(vectorL):
-            if idx%100==0:
-                print idx,'/',vectorL.shape[0]
-
-            intersec = MyAlgorithm.intersection(self,vectorR[idx, :3], vectorL[idx, :3], OR, OL)
-            color = MyAlgorithm.getColor(self,imageLeft,keyPointsL[idx,:])
-            lstPLR_color.append(intersec.tolist()+color)
-
-
-        return lstPLR_color
 
     def triangulate(self,pointR,imageRight,vectorL,idx):
+        '''
+        Triangula los puntos con sus rectas en 3d y obtiene los 2 puntos
+        si la distancia entre estos supera un cierto umbral se utiliza
+        '''
         vL = vectorL[idx,:3]
         vR = MyAlgorithm.getVectors(self,pointR,self.OR,"right")[:3]
-        intersec = MyAlgorithm.intersection(self, vR, vL, self.OR, self.OL)
+        # intersec = MyAlgorithm.intersection(self, vR, vL, self.OR, self.OL)
         pa,pb = MyAlgorithm.intersectionEcuation(self, vR, vL, self.OR, self.OL)
-        color = MyAlgorithm.getColor(self, imageRight, pointR)
-        return intersec.tolist()+color
+
+        if pa.size != 0:
+            if LA.norm(pa-pb)<5:
+                color = MyAlgorithm.getColor(self, imageRight, pointR)
+                return 0.5*(pa+pb),tuple(color)
+            else:
+                return np.array([]),None
+
+        else:
+            return np.array([]),None
+
 
 
 
     def getColor(self,image,point):
+        '''
+        Obtiene el color de la imagen de ese punto
+        '''
         point = point.astype(np.int)
-        return image[point[0],point[1],:].tolist()
+        color = image[point[0],point[1],:].astype(np.float32).tolist()
+        return (color[0]/255,color[1]/255,color[2]/255)
 
-    def matchingPoint(self, keyPointL, lst2matchingR, edgesR,outR, outL, size=(7, 7)):
+    def matchingPoint(self, keyPointL, lst2matchingR, edgesR,outR, outL, size=(25, 25)):
+        '''
+        Realiza el maching de un punto de la imagen izqda en todos aquellos puntos perteneciente
+        a la linea epiplar derecha
+        '''
 
-        alfa = 0.6
-        beta = 0.4
+        alfa = 0.5
+        beta = 0.5
         incu = int(size[0] / 2)
         incv = int(size[1] / 2)
 
@@ -346,6 +284,7 @@ class MyAlgorithm():
             # Solo buscamos el matching si es un pixel de contorno
             if edgesR[uvR[0], uvR[1]] == 255:
                 patchR = self.hsvR[uvR[0] - incu:uvR[0] + incu + 1, uvR[1] - incv:uvR[1] + incv + 1, :]
+
                 corr = alfa * MyAlgorithm.correlation_coefficient(self, patchL[:, :, 0], patchR[:, :, 0]) \
                        + beta * MyAlgorithm.correlation_coefficient(self, patchR[:, :, 1], patchR[:, :, 1])
                 if corr > maximum:
@@ -359,7 +298,6 @@ class MyAlgorithm():
         if tuple(best) == tuple(np.zeros((3,))):
             print "Point not match: ", keyPointL
             return np.zeros((3,)),outR,outL
-            # delete point
 
         pointR = best.astype(np.int)
 
@@ -372,21 +310,32 @@ class MyAlgorithm():
 
 
     def intersectionEcuation(self,vectorR,vectorL,OR,OL):
+        '''
+        Calculo de la interseccion de dos rectas en 3D y calculo del punto con menor distancia entre ellos
+        '''
         ORL = OR-OL
         d1343 = ORL[0]*vectorL[0]+ORL[1]*vectorL[1]+ORL[2]*vectorL[2]
         d4321 = vectorL[0]*vectorR[0]+vectorL[1]*vectorR[1]+vectorL[2]*vectorR[2]
-        d1321 = ORL[0]**vectorR[0]+ORL[1]**vectorR[1]+ORL[2]**vectorR[2]
+        d1321 = ORL[0]*vectorR[0]+ORL[1]*vectorR[1]+ORL[2]*vectorR[2]
         d4343 = vectorL[0]*vectorL[0]+vectorL[1]*vectorL[1]+vectorL[2]*vectorL[2]
         d2121 = vectorR[0]*vectorR[0]+vectorR[1]*vectorR[1]+vectorR[2]*vectorR[2]
         denom = d2121 * d4343 - d4321 * d4321
         numer = d1343 * d4321 - d1321 * d4343
 
-        mua = numer / denom
-        mub = (d1343 + d4321 * (mua)) / d4343
 
-        pa = OR+vectorR*mua
-        pb = OL+vectorL*mub
-        return pa,pb
+        if (abs(denom) < 1e-6):
+            return np.array([]),np.array([])
+        else:
+            mua = numer / denom
+            mub = (d1343 + d4321 * (mua)) / d4343
+
+            pa = OR+vectorR*mua
+            pb = OL+vectorL*mub
+
+            if abs(pa[0]) > 1e6 or  abs(pa[1]) > 1e6 or  abs(pa[2]) > 1e6:
+                return np.array([]), np.array([])
+            else:
+                return pa,pb
 
 
     def execute(self):
@@ -409,7 +358,7 @@ class MyAlgorithm():
 
         save = False
         write = True
-        visor = True
+        visor = False
 
 
         # KEYPOINTS
@@ -431,19 +380,13 @@ class MyAlgorithm():
         lstPoints3d_L = MyAlgorithm.getPointsfromline(self,vectorL,self.camLeftP.getCameraPosition())
         print "Dimension",len(lstPoints3d_L),"x",len(lstPoints3d_L[0])
 
-        # Get NxM projected points from NxM
 
+        # Bucle
         for idx,Points3d_L in enumerate(lstPoints3d_L):
             if idx%100==0 and idx>0:
                 print idx,'/',len(lstPoints3d_L),"T: ", time.clock() - self.time
-                # self.outEpipol[:,:self.width,:]=self.outL_line
-                # self.outEpipol[:,self.width:,:]=self.outR_line
-                # cv2.imwrite("result/imagenes_epipolar/LR/imag_epipol" + str(idx) + ".png",  self.outEpipol)
 
-                # cv2.imwrite("result/imagenes_epipolar/Rk/imagR_epipol"+str(idx)+".png",self.outR_line)
-                # cv2.imwrite("result/imagenes_epipolar/L/imagL_epipol"+str(idx)+".png",self.outL_line)
-
-
+            # Linea epipolar
             m, n, begin, end = MyAlgorithm.getLineEpipolar(self,Points3d_L,cam="right")
             projected_R = MyAlgorithm.getPointsfromEpipolar(self,m,n,begin,end)
 
@@ -454,20 +397,24 @@ class MyAlgorithm():
             outR_line = MyAlgorithm.drawPoint(self,outR,projected_R_unique,None,(255,255,0))
             self.setRightImageFiltered(outR_line)
 
-            pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:], projected_R_unique,edgesR,outR,outL)
 
-
+            # Matching
+            pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:],
+                                                         projected_R_unique,edgesR,outR,outL, size=(7,7))
 
 
             if tuple(pointR) != tuple(np.zeros((3,))):
-                point3DColor = MyAlgorithm.triangulate(self,pointR,imageRight,vectorL,idx)
 
-                if write:
-                    MyAlgorithm.writeTxt(self,"result/ptsColor_franja5_2.txt",point3DColor,mode="unico")
+                # Triangulacion
+                point3D, color = MyAlgorithm.triangulate(self,pointR,imageRight,vectorL,idx)
 
-                if visor:
-                    self.sensor.drawPoint(np.array([point3DColor[0], point3DColor[1], point3DColor[2]]),
-                                      (point3DColor[3], point3DColor[4], point3DColor[5]))
+                # Pintamos
+                if point3D.size !=0:
+                    if write:
+                         MyAlgorithm.writeTxt(self,"result/SAD_25.txt",point3D,color,)
+
+                    if visor:
+                        self.sensor.drawPoint(point=point3D,color=color)
 
         print "Tiempo Total: ",time.clock()-self.time
         if self.done:
