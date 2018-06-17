@@ -61,23 +61,6 @@ class MyAlgorithm():
                                                 color[0], color[1], color[2]))
 
 
-    def correlation_coefficient(self,patch1, patch2):
-        '''
-        Funcion que calcula el nivel de similitud entre dos parches
-        '''
-        if patch1.shape[1] < patch2.shape[1]:
-            patch2 = patch2[:,0:patch1.shape[1]]
-
-        if patch2.shape[1] < patch1.shape[1]:
-            patch1 = patch1[:, 0:patch2.shape[1]]
-
-        product = np.mean((patch1 - patch1.mean()) * (patch2 - patch2.mean()))
-        stds = patch1.std() * patch2.std()
-        if stds == 0:
-            return 0
-        else:
-            product /= stds
-            return product
 
     def findKeypoints(self,imageR,imageL):
         '''
@@ -262,6 +245,20 @@ class MyAlgorithm():
         color = image[point[0],point[1],:].astype(np.float32).tolist()
         return (color[0]/255,color[1]/255,color[2]/255)
 
+
+    def calculateSAD(self,patch1,patch2):
+        if patch1.shape[1] < patch2.shape[1]:
+            patch2 = patch2[:,0:patch1.shape[1]]
+
+        if patch2.shape[1] < patch1.shape[1]:
+            patch1 = patch1[:, 0:patch2.shape[1]]
+
+        dif = abs(patch1-patch2)
+        sum = np.sum(dif)
+        sum /= 255*dif.size
+        return sum
+
+
     def matchingPoint(self, keyPointL, lst2matchingR, edgesR,outR, outL, size=(25, 25)):
         '''
         Realiza el maching de un punto de la imagen izqda en todos aquellos puntos perteneciente
@@ -285,8 +282,10 @@ class MyAlgorithm():
             if edgesR[uvR[0], uvR[1]] == 255:
                 patchR = self.hsvR[uvR[0] - incu:uvR[0] + incu + 1, uvR[1] - incv:uvR[1] + incv + 1, :]
 
-                corr = alfa * MyAlgorithm.correlation_coefficient(self, patchL[:, :, 0], patchR[:, :, 0]) \
-                       + beta * MyAlgorithm.correlation_coefficient(self, patchR[:, :, 1], patchR[:, :, 1])
+                corr =1-( alfa * MyAlgorithm.calculateSAD(self, patchL[:, :, 0], patchR[:, :, 0])\
+                       + beta * MyAlgorithm.calculateSAD(self, patchR[:, :, 1], patchR[:, :, 1]))
+
+
                 if corr > maximum:
                     maximum = corr
                     best = uvR
@@ -354,10 +353,7 @@ class MyAlgorithm():
         self.hsvL = cv2.cvtColor(imageLeft, cv2.COLOR_RGB2HSV)
 
 
-        os.system("killall gzserver")
-
-        save = False
-        write = True
+        write = False
         visor = False
 
 
@@ -400,7 +396,7 @@ class MyAlgorithm():
 
             # Matching
             pointR,outR,outL = MyAlgorithm.matchingPoint(self,keypointsL[idx,:],
-                                                         projected_R_unique,edgesR,outR,outL, size=(7,7))
+                                                         projected_R_unique,edgesR,outR,outL, size=(25,25))
 
 
             if tuple(pointR) != tuple(np.zeros((3,))):
